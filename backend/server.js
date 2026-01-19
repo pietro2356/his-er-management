@@ -23,6 +23,10 @@ const pool = new Pool({
   port: 5432,
 });
 
+pool.on('connect', (client) => {
+  client.query('SET search_path TO sio, public');
+})
+
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
 
