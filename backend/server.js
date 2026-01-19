@@ -198,16 +198,22 @@ app.get('/admissions', authenticateToken, async (req, res) => {
 
     // Mappiamo i risultati per strutturare meglio l'oggetto colore per il FE se necessario,
     // oppure lo lasciamo piatto. Qui restituisco un JSON arricchito.
-    const mappedRows = result.rows.map(row => ({
-      ...row,
-      codice_colore: row.color_code ? {
-        code: row.color_code,
-        hex: row.color_hex,
-        display: row.color_name,
-        priority: row.color_priority
-      } : null
-    }));
-
+    const mappedRows = result.rows.map(row => {
+    const tmp = {
+        ...row,
+          codice_colore: row.color_code ? {
+            code: row.color_code,
+            hex: row.color_hex,
+            display: row.color_name,
+            priority: row.color_priority
+          } : null
+      }
+      delete tmp.color_code;
+      delete tmp.color_hex;
+      delete tmp.color_name;
+      delete tmp.color_priority;
+      return tmp;
+    });
     res.json(mappedRows);
   } catch (err) {
     res.status(500).json({ error: err.message });
