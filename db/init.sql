@@ -1,35 +1,42 @@
 CREATE SCHEMA IF NOT EXISTS sio;
-
 SET search_path TO sio;
 
 CREATE EXTENSION pgcrypto;
 
-
--- 2. Creazione Tipi Enumerati (ENUM)
--- Questo garantisce che nel DB entrino solo questi valori precisi
-DO $$
-BEGIN
+-- 2. Creazione Tipi Enumerati
+-- user_role: Rimane invariato
+DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
         CREATE TYPE user_role AS ENUM ('DOC', 'INF', 'AMM');
     END IF;
+END$$;
+
+-- admission_status: MANTENUTO 'RIC' come richiesto
+DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'admission_status') THEN
         CREATE TYPE admission_status AS ENUM ('ATT', 'VIS', 'OBI', 'RIC', 'DIM');
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'triage_color') THEN
-        CREATE TYPE triage_color AS ENUM ('ROSSO', 'ARANCIONE', 'AZZURRO', 'VERDE', 'BIANCO');
-    END IF;
 END$$;
 
--- 3. Creazione Tabella Utenti
+-- 3. Tabella Colori Triage (Configurazione Dinamica)
+CREATE TABLE IF NOT EXISTS triage_colors (
+    code VARCHAR(20) PRIMARY KEY, -- Es. 'ROSSO', 'GIALLO'
+    display_name VARCHAR(50) NOT NULL,
+    priority INTEGER NOT NULL, -- 1 = Massima urgenza
+    hex_value VARCHAR(7) NOT NULL, -- Es. '#FF0000'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 4. Tabella Utenti
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
-    role user_role NOT NULL, -- Uso del tipo custom
+    role user_role NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Creazione Tabella Pazienti (Anagrafica)
+-- 5. Tabella Pazienti
 CREATE TABLE IF NOT EXISTS patients (
     id SERIAL PRIMARY KEY,
     codice_fiscale VARCHAR(16) UNIQUE NOT NULL,
@@ -43,10 +50,9 @@ CREATE TABLE IF NOT EXISTS patients (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indice per ricerca veloce su CF
 CREATE INDEX IF NOT EXISTS idx_patients_cf ON patients(codice_fiscale);
 
--- 5. Creazione Tabella Accessi (Admissions)
+-- 6. Tabella Accessi (Admissions)
 CREATE TABLE IF NOT EXISTS admissions (
     id SERIAL PRIMARY KEY,
     patient_id INTEGER REFERENCES patients(id) ON DELETE RESTRICT,
@@ -54,17 +60,27 @@ CREATE TABLE IF NOT EXISTS admissions (
     data_ora_ingresso TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     stato admission_status NOT NULL DEFAULT 'ATT',
     patologia_codice VARCHAR(10),
-    codice_colore triage_color,
-    modalita_arrivo VARCHAR(50), -- Es. Ambulanza, Autonomo
+
+    -- Nuova Foreign Key verso la tabella colori
+    codice_colore VARCHAR(20) REFERENCES triage_colors(code) ON DELETE SET NULL,
+
+    modalita_arrivo VARCHAR(50),
     note_triage TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indice per ricerca veloce su Braccialetto
 CREATE INDEX IF NOT EXISTS idx_admissions_braccialetto ON admissions(braccialetto);
-
-
 -- --- POPOLAMENTO DATI (SEEDING) ---
+-- A. Popolamento Colori Triage (Default Standard)
+-- Usiamo ON CONFLICT per non rompere il riavvio se i dati esistono
+INSERT INTO triage_colors (code, display_name, priority, hex_value) VALUES
+    ('ROSSO', 'Emergenza', 1, '#FF4E4A'),
+    ('ARANCIONE', 'Urgenza Indifferibile', 2, '#FFB053'),
+    ('AZZURRO', 'Urgenza Differibile', 3, '#61AFEF'),
+    ('VERDE', 'Urgenza Minore', 4, '#A5ED72'),
+    ('BIANCO', 'Non Urgente', 5, '#DCDFE4')
+ON CONFLICT (code) DO UPDATE
+    SET hex_value = EXCLUDED.hex_value, priority = EXCLUDED.priority;
 
 -- A. Utenti (Password: "1234")
 INSERT INTO users (username, password, role) VALUES
