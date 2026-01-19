@@ -4,6 +4,31 @@ import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import client from 'prom-client';
+import winston from 'winston';
+import responseTime from "response-time";
+
+// --- 1. CONFIGURAZIONE LOGGER (Winston) ---
+// I log in JSON sono più facili da analizzare per le macchine
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.json()
+  ),
+  transports: [new winston.transports.Console()],
+});
+
+// --- 2. CONFIGURAZIONE METRICHE (Prometheus) ---
+client.collectDefaultMetrics(); // Raccoglie CPU, Memoria, Event Loop automaticamente
+
+// Definiamo una metrica personalizzata: Istogramma dei tempi di risposta HTTP
+const httpRequestDurationMicroseconds = new client.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'code'],
+  buckets: [0.1, 0.3, 0.5, 0.7, 1, 3, 5, 10] // Fasce di tempo (0.1s, 0.3s...)
+});
 
 // Destrutturazione necessaria per 'pg' in ES6
 const { Pool } = pg;
@@ -47,6 +72,38 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+// --- 3. MIDDLEWARE PER TRACCIARE LE METRICHE ---
+// Questo middleware intercetta TUTTE le chiamate e registra quanto tempo impiegano
+app.use(responseTime((req, res, time) => {
+  if (req.path === '/metrics') return; // Ignoriamo la chiamata alle metriche stesse
+
+  // Normalizziamo la rotta (es. /admissions/123 diventa /admissions/:id) per non creare troppi grafici
+  // Nota: Express di default non espone la route matchata facilmente in middleware globali,
+  // usiamo req.path per semplicità o req.route se spostiamo la logica.
+  // Per ora usiamo req.path ma attenzione agli ID.
+
+  httpRequestDurationMicroseconds.labels(
+      req.method,
+      req.path, // In produzione meglio raggruppare gli ID (es. usare una regex per sostituire numeri con :id)
+      res.statusCode
+  ).observe(time / 1000); // response-time restituisce ms, Prometheus vuole secondi
+
+  // Loggiamo anche l'evento
+  logger.info(`Request handled`, {
+    method: req.method,
+    url: req.path,
+    status: res.statusCode,
+    duration_ms: time
+  });
+}));
+
+// --- 4. ENDPOINT PER LE METRICHE ---
+// Prometheus chiamerà questo indirizzo ogni 5-15 secondi
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.send(await client.register.metrics());
+});
 
 // --- HEALTH CHECK ---
 app.get('/health', async (req, res) => {
@@ -93,6 +150,7 @@ app.post('/auth/login', async (req, res) => {
       user: { username: user.username, role: user.role }
     });
   } catch (err) {
+    logger.error("Errore durante il login", { error: err.message });
     res.status(500).json({ error: err.message });
   }
 });
@@ -266,5 +324,5 @@ app.patch('/admissions/:id/status', authenticateToken, async (req, res) => {
 
 // Avvio Server
 app.listen(port, () => {
-  console.log(`SIO Backend (ES6) in ascolto sulla porta ${port}`);
+  logger.info(`SIO Backend (ES6) in ascolto sulla porta ${port}`);
 });
