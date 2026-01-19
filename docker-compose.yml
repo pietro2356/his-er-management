@@ -1,0 +1,32 @@
+#version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: sio-postgres
+    environment:
+      POSTGRES_USER: sio_user
+      POSTGRES_PASSWORD: sio_password
+      POSTGRES_DB: sio_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - sio_pg_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: sio-backend
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: db
+      DB_USER: sio_user
+      DB_PASS: sio_password
+      DB_NAME: sio_db
+      JWT_SECRET: "chiave_segreta_super_sicura_per_il_corso_segretissimissima"
+    depends_on:
+      - db
+    restart: always
+
+volumes:
+  sio_pg_data:
