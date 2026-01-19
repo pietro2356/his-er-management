@@ -3,6 +3,7 @@ import pg from 'pg';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 // Destrutturazione necessaria per 'pg' in ES6
 const { Pool } = pg;
@@ -28,8 +29,10 @@ pool.on('connect', (client) => {
   client.query('SET search_path TO sio, public');
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
-
+// Chiave Segreta per JWT
+const JWT_SECRET = process.env.NODE_ENV === 'production'
+    ? (process.env.JWT_SECRET || 'super-secret-production-key')
+    : crypto.randomBytes(64).toString();
 
 // Middleware per verificare il Token JWT
 const authenticateToken = (req, res, next) => {
@@ -79,7 +82,11 @@ app.post('/auth/login', async (req, res) => {
     const validPass = await bcrypt.compare(password, user.password);
     if (!validPass) return res.status(400).json({ error: "Password errata" });
 
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
+    const token = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '1h' }
+    );
 
     res.json({
       token,
