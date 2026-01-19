@@ -1,0 +1,10 @@
+### POST request to authenticate a user
+POST http://localhost/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "medico",
+  "password": "1234"
+}
+
+###
