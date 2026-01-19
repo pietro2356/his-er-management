@@ -36,5 +36,21 @@ services:
       - "80:80"
     depends_on:
       - backend
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090" # Interfaccia web di Prometheus (debug)
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000" # Grafana sarà su localhost:3001
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Password login iniziale
+    depends_on:
+      - prometheus
 volumes:
   pg_data:

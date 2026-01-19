@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 5s # Leggi i dati ogni 5 secondi
+
+scrape_configs:
+  - job_name: 'sio-backend'
+    static_configs:
+      - targets: ['backend:3000'] # Nome del servizio docker del tuo backend
